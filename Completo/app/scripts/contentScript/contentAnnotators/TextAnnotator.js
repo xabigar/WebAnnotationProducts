@@ -13,9 +13,9 @@ const Alerts = require('../../utils/Alerts')
 const Theme = require('../../definition/Theme')
 const Code = require('../../definition/Code')
 const ReplyAnnotation = require('../../production/ReplyAnnotation')
-const Awesomplete = require('awesomplete')
 const axios = require('axios')
 const qs = require('qs')
+const Awesomplete = require('awesomplete')
 const ANNOTATION_OBSERVER_INTERVAL_IN_SECONDS = 3
 const ANNOTATIONS_UPDATE_INTERVAL_IN_SECONDS = 60
 
@@ -619,8 +619,7 @@ class TextAnnotator extends ContentAnnotator {
     /* if (previousAssignmentsUI) {
       html += previousAssignmentsUI.outerHTML
     } */
-      html += '<textarea class="swal2-textarea" data-minchars="1" data-multiple id="comment" rows="6" autofocus>' + annotation.text + '</textarea>'
-
+    html += '<textarea class="swal2-textarea" data-minchars="1" data-multiple id="comment" rows="6" autofocus>' + annotation.text + '</textarea>'
     // On before open
     let onBeforeOpen = () => {
       // Load datalist with previously used texts
@@ -764,7 +763,7 @@ class TextAnnotator extends ContentAnnotator {
             // TODO With feature AddReference
             // let regex = /\b(?:https?:\/\/)?[^/:]+\/.*?mod\/assign\/view.php\?id=[0-9]+/g
             // return text.replace(regex, '')
-            if(text.replace(/ /g,'') !== ''){
+            if (text.replace(/ /g, '') !== '') {
               return text
             }
           }), _.isEmpty)))
