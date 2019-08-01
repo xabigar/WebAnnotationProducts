@@ -4,13 +4,17 @@ const Alerts = require('../utils/Alerts')
 const Config = require('../Config')
 const ChromeStorage = require('../utils/ChromeStorage')
 const LanguageUtils = require('../utils/LanguageUtils')
-
+// const ImportSchema = require('./ImportSchema')
 const GroupName = Config.groupName
 const selectedGroupNamespace = 'hypothesis.currentGroup'
+const HypothesisClientManager = require('../storage/hypothesis/HypothesisClientManager')
+// const Events = require('../contentScript/Events')
+// const LocalStorageManager = require('../storage/local/LocalStorageManager')
 const checkHypothesisLoggedInWhenPromptInSeconds = 2 // When not logged in, check if user has logged in
 
 class GroupSelector {
   constructor () {
+    this.selectedGroupNamespace = 'groupManipulation.currentGroup'
     this.groups = null
     this.currentGroup = null
     this.user = {}
@@ -18,12 +22,27 @@ class GroupSelector {
 
   init (callback) {
     console.debug('Initializing group selector')
-    this.addGroupSelectorToSidebar(() => {
-      this.reloadGroupsContainer(() => {
-        if (_.isFunction(callback)) {
-          callback()
-        }
-      })
+    this.checkIsLoggedIn((err) => {
+      if (err) {
+        // Stop propagating the rest of the functions, because it is not logged in storage
+        // Show that user need to log in remote storage to continue
+        Alerts.errorAlert({
+          title: 'Log in selected storage required',
+          text: chrome.i18n.getMessage('StorageLoginRequired')
+        })
+      } else {
+        // Retrieve user profile (for further uses in other functionalities of the tool)
+        this.retrieveUserProfile(() => {
+          // Define current group
+          this.defineCurrentGroup(() => {
+            this.reloadGroupsContainer()
+            console.debug('Initialized group selector')
+            if (_.isFunction(callback)) {
+              callback(null)
+            }
+          })
+        })
+      }
     })
   }
 
@@ -32,60 +51,103 @@ class GroupSelector {
     if (window.abwa.annotationBasedInitializer.initAnnotation) {
       let annotationGroupId = window.abwa.annotationBasedInitializer.initAnnotation.group
       // Load group of annotation
-      this.retrieveUserProfile(() => {
-        this.retrieveHypothesisGroups((err, groups) => {
-          if (err) {
-            if (_.isFunction(callback)) {
-              callback(err)
-            }
-          } else {
-            // Set current group
-            this.currentGroup = _.find(groups, (group) => { return group.id === annotationGroupId })
-            // Save to chrome storage current group
-            ChromeStorage.setData(selectedGroupNamespace, {data: JSON.stringify(this.currentGroup)}, ChromeStorage.local)
-            if (_.isFunction(callback)) {
-              callback()
-            }
+      this.retrieveGroups((err, groups) => {
+        if (err) {
+          if (_.isFunction(callback)) {
+            callback(err)
           }
-        })
+        } else {
+          // Set current group
+          this.currentGroup = _.find(groups, (group) => { return group.id === annotationGroupId })
+          // Save to chrome storage current group
+          ChromeStorage.setData(selectedGroupNamespace, {data: JSON.stringify(this.currentGroup)}, ChromeStorage.local)
+          if (_.isFunction(callback)) {
+            callback()
+          }
+        }
       })
     } else {
       this.retrieveUserProfile(() => {
         // Load all the groups belonged to current user
-        this.retrieveHypothesisGroups((err, groups) => {
+        this.retrieveGroups((err, groups) => {
           if (err) {
 
           } else {
-            let group = _.find(groups, (group) => {
-              return group.name === GroupName
-            })
-            if (_.isObject(group)) {
-              // Current group will be that group
-              this.currentGroup = group
-              if (_.isFunction(callback)) {
-                callback(null)
-              }
-            } else {
-              // TODO i18n
-              Alerts.loadingAlert({
-                title: 'First time reviewing?',
-                text: 'It seems that it is your first time using Review&Go. We are configuring everything to start reviewing.',
-                position: Alerts.position.center
-              })
-              // TODO Create default group
-              this.createApplicationBasedGroupForUser((err, group) => {
-                if (err) {
-                  Alerts.errorAlert({text: 'We are unable to create Hypothes.is group for Review&Go. Please check if you are logged in Hypothes.is.'})
-                } else {
-                  this.currentGroup = group
-                  callback(null)
+            ChromeStorage.getData(this.selectedGroupNamespace, ChromeStorage.local, (err, savedCurrentGroup) => {
+              if (!err && !_.isEmpty(savedCurrentGroup) && _.has(savedCurrentGroup, 'data')) {
+                // Parse saved current group
+                try {
+                  let savedCurrentGroupData = JSON.parse(savedCurrentGroup.data)
+                  let currentGroup = _.find(this.groups, (group) => {
+                    return group.id === savedCurrentGroupData.id
+                  })
+                  // Check if group exists in current user
+                  if (_.isObject(currentGroup)) {
+                    this.currentGroup = currentGroup
+                  }
+                } catch (e) {
+                  // Nothing to do
                 }
-              })
-            }
+              }
+              // If group cannot be retrieved from saved in extension storage
+              // Try to load a group with defaultName
+              if (_.isEmpty(this.currentGroup)) {
+                this.currentGroup = _.find(window.abwa.groupSelector.groups, (group) => { return group.name === GroupName })
+              }
+              /*
+              // If local annotation storage is selected, open any other group as all of them are for review&go
+              if (_.isEmpty(this.currentGroup) && LanguageUtils.isInstanceOf(window.abwa.storageManager, LocalStorageManager)) {
+                this.currentGroup = _.first(window.abwa.groupSelector.groups)
+              } */
+              if (_.isEmpty(this.currentGroup)) {
+                // TODO i18n
+                Alerts.loadingAlert({
+                  title: 'First time reviewing?',
+                  text: 'It seems that it is your first time using Review&Go. We are configuring everything to start reviewing.',
+                  position: Alerts.position.center
+                })
+                // TODO Create default group
+                this.createApplicationBasedGroupForUser((err, group) => {
+                  if (err) {
+                    Alerts.errorAlert({text: 'We are unable to create Hypothes.is group for Review&Go. Please check if you are logged in Hypothes.is.'})
+                  } else {
+                    this.currentGroup = group
+                    callback(null)
+                  }
+                })
+              }
+            })
           }
         })
       })
     }
+  }
+
+  checkIsLoggedIn (callback) {
+    let sidebarURL = chrome.extension.getURL('pages/sidebar/groupSelection.html')
+    $.get(sidebarURL, (html) => {
+      // Append sidebar to content
+      $('#abwaSidebarContainer').append($.parseHTML(html))
+      if (!window.abwa.storageManager.isLoggedIn()) {
+        // Display login/sign up form
+        $('#notLoggedInGroupContainer').attr('aria-hidden', 'false')
+        // Hide group container
+        $('#loggedInGroupContainer').attr('aria-hidden', 'true')
+        // Hide purposes wrapper
+        $('#purposesWrapper').attr('aria-hidden', 'true')
+        // Start listening to when is logged in continuously
+        chrome.runtime.sendMessage({scope: 'hypothesis', cmd: 'startListeningLogin'})
+        // Open the sidebar to notify user that needs to log in
+        window.abwa.sidebar.openSidebar()
+        if (_.isFunction(callback)) {
+          callback(new Error('Is not logged in'))
+        }
+      } else {
+        if (_.isFunction(callback)) {
+          callback()
+        }
+      }
+    })
   }
 
   createApplicationBasedGroupForUser (callback) {
@@ -135,23 +197,11 @@ class GroupSelector {
     }
   }
 
-  initIsLoggedChecking () {
-    // Check if user has been logged in
-    this.loggedInInterval = setInterval(() => {
-      chrome.runtime.sendMessage({scope: 'hypothesis', cmd: 'getToken'}, (token) => {
-        if (!_.isNull(token)) {
-          // Reload the web page
-          window.location.reload()
-        }
-      })
-    }, checkHypothesisLoggedInWhenPromptInSeconds * 1000)
-  }
-
   renderGroupsContainer (callback) {
     // Display group selector and purposes selector
     $('#purposesWrapper').attr('aria-hidden', 'false')
     // Retrieve groups
-    this.retrieveHypothesisGroups((groups) => {
+    this.retrieveGroups((groups) => {
       console.debug(groups)
       let dropdownMenu = document.querySelector('#groupSelector')
       dropdownMenu.innerHTML = '' // Remove all groups
@@ -192,7 +242,7 @@ class GroupSelector {
     })
   }
 
-  retrieveHypothesisGroups (callback) {
+  retrieveGroups (callback) {
     window.abwa.storageManager.client.getListOfGroups({}, (err, groups) => {
       if (err) {
         if (_.isFunction(callback)) {
@@ -200,6 +250,12 @@ class GroupSelector {
         }
       } else {
         this.groups = groups
+        // Remove public group in hypothes.is
+        if (LanguageUtils.isInstanceOf(window.abwa.storageManager, HypothesisClientManager)) {
+          _.remove(this.groups, (group) => {
+            return group.id === '__world__'
+          })
+        }
         if (_.isFunction(callback)) {
           callback(null, groups)
         }

@@ -1,20 +1,33 @@
-
-<div aria-hidden="true" id="groupSelectorContainer">
-  <div aria-hidden="true" pv:condition="Manual" id="loggedInGroupContainer" class="sidebarContainer">
-    <div id="groupHeader" class="containerHeader">
-      <label>Annotation group</label>
-    </div>
-    <div id="groupBody" class="bodyContainer">
-      <select id="groupSelector" class="dropdown">
-      </select>
-    </div>
-  </div>
-  <div aria-hidden="true" pv:condition="Hypothesis" id="notLoggedInGroupContainer" class="sidebarContainer">
+<div id="groupSelectorContainer">
+  <div id="notLoggedInGroupContainer" class="sidebarContainer" aria-hidden="true">
     <div id="hypothesisLogin" class="containerHeader">
-      Please log in hypothesis
+      Please log in your chosen storage
     </div>
     <div>
+      <h4>Hypothes.is</h4>
       <a href="https://hypothes.is/login" target="_blank">Log in</a> / <a href="https://hypothes.is/signup" target="_blank">Sign up</a>
     </div>
   </div>
+  <div id="loggedInGroupContainer" class="sidebarContainer">
+    <div id="groupSelectorContainerHeader" class="containerHeader">
+      <div id="groupSelector" aria-expanded="false">
+        <span id="groupSelectorName"></span>
+        <span id="groupSelectorToggle"></span>
+        <div id="groupSelectorContainerSelector" class="sidebarContainer">
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <template id="groupSelectorItem">
+    <div class="groupSelectorItemContainer" aria-expanded="false">
+      <span class="groupSelectorItemName"></span>
+      <span class="groupSelectorItemToggle"></span>
+      <div class="groupSelectorItemOptionsContainer">
+        <span class="groupSelectorItemOption renameGroup" title="Rename model">Rename</span>
+        <span class="groupSelectorItemOption exportGroup" title="Export model">Export</span>
+        <span class="groupSelectorItemOption deleteGroup" title="Delete model">Delete</span>
+      </div>
+    </div>
+  </template>
 </div>
